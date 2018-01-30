@@ -1,28 +1,430 @@
-﻿
-Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.25420.1
-MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HSV_flere_Objekter", "HSV_flere_Objekter.vcxproj", "{26A7B72D-1B43-46C8-89BB-738BBEA16649}"
-EndProject
-Global
-	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-		Debug|x64 = Debug|x64
-		Debug|x86 = Debug|x86
-		Release|x64 = Release|x64
-		Release|x86 = Release|x86
-	EndGlobalSection
-	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{26A7B72D-1B43-46C8-89BB-738BBEA16649}.Debug|x64.ActiveCfg = Debug|x64
-		{26A7B72D-1B43-46C8-89BB-738BBEA16649}.Debug|x64.Build.0 = Debug|x64
-		{26A7B72D-1B43-46C8-89BB-738BBEA16649}.Debug|x86.ActiveCfg = Debug|Win32
-		{26A7B72D-1B43-46C8-89BB-738BBEA16649}.Debug|x86.Build.0 = Debug|Win32
-		{26A7B72D-1B43-46C8-89BB-738BBEA16649}.Release|x64.ActiveCfg = Release|x64
-		{26A7B72D-1B43-46C8-89BB-738BBEA16649}.Release|x64.Build.0 = Release|x64
-		{26A7B72D-1B43-46C8-89BB-738BBEA16649}.Release|x86.ActiveCfg = Release|Win32
-		{26A7B72D-1B43-46C8-89BB-738BBEA16649}.Release|x86.Build.0 = Release|Win32
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
-	EndGlobalSection
-EndGlobal
+
+#include <sstream>
+#include <string>
+#include <iostream>
+#include <vector>  // for å lage vektorer trenger jeg dette biblioteket 
+
+
+//#include "opencv\highgui.h"
+//#include "opencv\cv.h"   //siden jeg har inkludert opencv i Objekter.h header filen min så trenger jeg ikke å ha den her
+#include "Objekter.h"  //min heder fil
+
+
+#include <opencv2/opencv.hpp> //bruker disse for å ikke få error på endel av komandoer/funksjoner
+#include <iostream>
+
+// using namespace cv;  jeg har denne i header filen min 
+using namespace std;
+int H_MIN = 0, H_MAKS = 256, S_MIN = 0, S_MAKS = 256, V_MIN = 0, V_MAKS = 256; //første min og MAKS HSV (Hue Saturation Value) filter verdier, som vil forrandre seg når vi bruker HSV_Justering funksjonen 
+
+
+const int FRAME_BREDDE = 640;//standard fangst av bredde og høyde.  
+const int FRAME_HOYDE = 480; //Vi kan justere det basert på hvor stor vinduene skal være! (ikke større en skjermen din :D)
+const int Maks_Nr_Objekter = 50;//maksimale objekter som kan detekteres i rammen 
+const int MIN_OBJEKT_AREA = 20 * 20; //minimum and Maksimum object area
+const int MAKS_OBJECT_AREA = FRAME_HOYDE*FRAME_BREDDE / 1.5; // at vinduer skal ikke bli sørre en skjermen
+
+const string skjerm_vindu = "Original Bildet";//Angir navnet på vinduer som åpnses
+const string skjerm_vindu1 = "HSV Bilde";
+const string skjerm_vindu2 = "Thresholded Bilde";
+//const string skjerm_vindu3 = "After Morphological Operations";  vi kan fjerne dette forelopig 
+const string HSV_justering_vindu = "HSV_Justering";
+
+bool kalibreringsMode;//viser debugging vinduer, HSV_Justering osv. 
+bool mus_Tegner;//variablen som skal vise muse-bevegelsen  %%(jeg forandrer til boolean isteden for int det blir lettere å håndtere det )
+bool musBevegelse;
+bool tegnet_rektanglet; //rektanglet som blir tegnet på orginale bildet over objektet som skal bli sporet
+cv::Point initialKlikkPeker, nåværendeMusPeker;//fortsett sporing av første merkert punkt og nåværende musposisjon
+cv::Rect rektangelInnhold; //innholdet av rektanglet rundt objektet som blir tegnet 
+vector<int> H_Innhold, S_Innhold, V_Innhold;//HSV verdiene og innholdet fra mus-merkert området lagres i egne vektorer slik at vi kan sortere dem lettere
+
+void pa_justering(int, void*)   //"på_justering". Når det er forrandringer i justeringspossisjonen kaller vi til dette funksjonen
+{
+	// vi bruker dette funksjonen senere nå gjør den ingenting
+}
+
+void opprettHSV_Justering() {
+	//funksjonen som skal lage HSV_justering vindu 
+
+	namedWindow(HSV_justering_vindu, 0);
+	char JusteringsNavn[50]; //lager en minne til å lagre navnet på hver enkel justeringslinje på justeringsvinduet
+	sprintf(JusteringsNavn, "H_MIN", H_MIN);  // gir navn til hver linje på HSV_Justering vinduet "H_MIN" og setter in parametere som skal være på hver linje 
+	sprintf(JusteringsNavn, "H_MAKS", H_MAKS);
+	sprintf(JusteringsNavn, "S_MIN", S_MIN);
+	sprintf(JusteringsNavn, "S_MAKS", S_MAKS);
+	sprintf(JusteringsNavn, "V_MIN", V_MIN);
+	sprintf(JusteringsNavn, "V_MAKS", V_MAKS);
+	//opretter HSV_Justering og setter dem in i HSV_justeringsvindu.
+	//createTrackbar("navnet",HSV_justering_vindu, Adressen av variablen som forandrer når vi forandrer justeringen f.eks H_minste,
+	//den maksimale verdien av justeringsområdet,funksjonen som vi kaller når det blir endring med justering f.eks pa_justering)
+
+	createTrackbar("H_MIN", HSV_justering_vindu, &H_MIN, 255, pa_justering);  // setter verdier og parametre på (plassering,vindu,adressen(&H_MIN),verdi,tilbakekallingfunksjonen(pa_justering) 
+	createTrackbar("H_MAKS", HSV_justering_vindu, &H_MAKS, 255, pa_justering);
+	createTrackbar("S_MIN", HSV_justering_vindu, &S_MIN, 255, pa_justering);
+	createTrackbar("S_MAKS", HSV_justering_vindu, &S_MAKS, 255, pa_justering);
+	createTrackbar("V_MIN", HSV_justering_vindu, &V_MIN, 255, pa_justering);
+	createTrackbar("V_MAKS", HSV_justering_vindu, &V_MAKS, 255, pa_justering);
+	//C++: int createTrackbar(const string& trackbarname, const string& winname, int* value, int count, TrackbarCallback onChange=0, void* userdata=0)
+
+
+
+}
+
+void Dra_Rektangel(int event, int x, int y, int flags, void* param) {
+
+	if (kalibreringsMode == true)//hvis og bare hvis kalibreringsMode = true vil vi ha mulighet til å justere HSV verdier 
+	{
+		Mat* videoFeed = (Mat*)param; //get handle to video feed passed in as "param" and cast as Mat pointer
+
+		if (event == CV_EVENT_LBUTTONDOWN && mus_Tegner == false)//hvis Venstre musknapp er ikke nede og mus_tegner ikke er aktivert
+		{
+			initialKlikkPeker = cv::Point(x, y);//fortset sporing av første musklikk og venter på forandring
+			mus_Tegner = true;// setter det lik 1 mus_tegning  %% jeg forandra det til bool da blir det enkeler med false/true              SEYED :D
+							  //setter det lik true når den er venstre knapp er nede 
+		}
+		if (event == CV_EVENT_MOUSEMOVE && mus_Tegner == true) // mens mus er i bevegelse brukeren prøver og merkere objektet
+		{
+			nåværendeMusPeker = cv::Point(x, y);//fortset sporing av mus pekeren
+			musBevegelse = true; // mus beveget seg mens venstreknapp er nede 
+		}
+
+		if (event == CV_EVENT_LBUTTONUP && mus_Tegner == true) // når mus left knapp er slippet fri for at det skal tegnes rektangel rundt objektet 
+		{
+			rektangelInnhold = Rect(initialKlikkPeker, nåværendeMusPeker);//definerer hva rektangelets (start-, slutt-punktet) 
+
+			mus_Tegner = false;//reset boolean variablene og gjør det klar for gjenta operasjonen
+			musBevegelse = false;
+			tegnet_rektanglet = true; //vi har et tegnet rektangel 
+		}
+
+		if (event == CV_EVENT_RBUTTONDOWN) //når Høyre musknapp er presset skal det resete HSV_justering verdier
+		{
+			H_MIN = 0; //nullstiller HSV_justering verdier
+			S_MIN = 0;
+			V_MIN = 0;
+			H_MAKS = 255;
+			S_MAKS = 255;
+			V_MAKS = 255;
+		}
+
+	}
+
+}
+
+void HSV_Verdi_opptak(cv::Mat frame, cv::Mat hsv_frame)
+{
+	//vi trenger å lagre HSV-verdier for rektangel innholdet (merkert objekt)
+
+	if (musBevegelse == false && tegnet_rektanglet == true) //når musbevegelse ikke er aktivert(venstreknapp oppe) og vi har et rektangel som ble tegnet
+	{
+		if (H_Innhold.size()>0) H_Innhold.clear();//(Nullstilling av VektorVerdier)
+		if (S_Innhold.size()>0) S_Innhold.clear();
+		if (V_Innhold.size()>0)V_Innhold.clear();
+		if (rektangelInnhold.width<1 || rektangelInnhold.height<1) cout << "Tegn en rektangel, Ikke linje !" << endl; //vi ser bort ifra rektangler med lengde og bredde mindre enn 1
+		else {
+			for (int i = rektangelInnhold.x; i<rektangelInnhold.x + rektangelInnhold.width; i++) //forloop for x lagrer HSV-verdier på hver eneste punkt
+			{
+				for (int j = rektangelInnhold.y; j<rektangelInnhold.y + rektangelInnhold.height; j++) //forloop for y lagrer HSV-verdier på hver eneste punkt
+				{
+					H_Innhold.push_back((int)hsv_frame.at<cv::Vec3b>(j, i)[0]); // lagrer HSV verdiene for this punkt med
+					S_Innhold.push_back((int)hsv_frame.at<cv::Vec3b>(j, i)[1]);
+					V_Innhold.push_back((int)hsv_frame.at<cv::Vec3b>(j, i)[2]);
+				}
+			}
+		}
+		tegnet_rektanglet = false; //resetter tegnet_rektangel			(for å ha muligheten til å tegne eller velget et nytt objekt)
+		if (H_Innhold.size()>0) //setter MIN og MAX HSV-verdier fra MIN_elementer og MAX_elementer for hver array
+		{
+			H_MIN = *std::min_element(H_Innhold.begin(), H_Innhold.end()); //MIN_element og MAKS_element returnerer iteratorer derfor vi bør lage forksjell mellom de med "*"
+			H_MAKS = *std::max_element(H_Innhold.begin(), H_Innhold.end());
+			cout << "MIN 'H' VALUE: " << H_MIN << endl;		cout << "MAKS 'H' VALUE: " << H_MAKS << endl;
+		}
+		if (S_Innhold.size()>0)
+		{
+			S_MIN = *std::min_element(S_Innhold.begin(), S_Innhold.end());		S_MAKS = *std::max_element(S_Innhold.begin(), S_Innhold.end());
+			cout << "MIN 'S' VALUE: " << S_MIN << endl;		cout << "MAKS 'S' VALUE: " << S_MAKS << endl;
+		}
+		if (V_Innhold.size()>0)
+		{
+			V_MIN = *std::min_element(V_Innhold.begin(), V_Innhold.end());		V_MAKS = *std::max_element(V_Innhold.begin(), V_Innhold.end());
+			cout << "MIN 'V' VALUE: " << V_MIN << endl;		cout << "MAKS 'V' VALUE: " << V_MAKS << endl;
+		}
+	}
+
+	if (musBevegelse == true)// hvis musMove er true
+	{
+		rectangle(frame, initialKlikkPeker, cv::Point(nåværendeMusPeker.x, nåværendeMusPeker.y), cv::Scalar(0, 255, 0), 1, 8, 0);//hvis mus er hold ned, dra klikken og tegn rektangel på skjermen (frame) 
+	}
+
+
+}
+string intToString(int nummer) //int to string funksjon
+{
+	std::stringstream ss;
+	ss << nummer;
+	return ss.str();
+}
+
+void tegnetObjekt(vector<Objekter> MinObjekter, Mat &frame) //bruker en openCV tegne funksjoner til å tegne en tråkors på sporet bildet
+{
+	//for å hindre error fra skriving av skjermen(25,-25 er ikke innenfor rammen)
+	//	MinObjekter.getXPos();
+	//	MinObjekter.getYPos();
+
+	//pakker ut vektoren MinObjekter
+	for (int i = 0; i < MinObjekter.size(); i++)
+	{
+		//jeg tar og erstatter alle 'x' verdiene med MinObjekter.getXPos() . for å gjøre det enkelere siden jeg har laget klass som har alerede de veridene og det samme for 'y' erstattet med MinObjekter.getXPos() .
+		MinObjekter.at(i).getXPos();
+		MinObjekter.at(i).getYPos();
+
+
+		circle(frame, Point(MinObjekter.at(i).getXPos(), MinObjekter.at(i).getYPos()), 20, Scalar(0, 0, 255), 2); // kaster en sirkel med tykkelse 2 på objektet 
+		if (MinObjekter.at(i).getYPos() - 25 > 0)
+			line(frame, Point(MinObjekter.at(i).getXPos(), MinObjekter.at(i).getYPos()), Point(MinObjekter.at(i).getXPos(), MinObjekter.at(i).getYPos() - 25), Scalar(0, 0, 255), 2);
+		else line(frame, Point(MinObjekter.at(i).getXPos(), MinObjekter.at(i).getYPos()), Point(MinObjekter.at(i).getXPos(), 0), Scalar(0, 0, 255), 2);
+		if (MinObjekter.at(i).getYPos() + 25 < FRAME_HOYDE)
+			line(frame, Point(MinObjekter.at(i).getXPos(), MinObjekter.at(i).getYPos()), Point(MinObjekter.at(i).getXPos(), MinObjekter.at(i).getYPos() + 25), Scalar(0, 0, 255), 2);
+		else line(frame, Point(MinObjekter.at(i).getXPos(), MinObjekter.at(i).getYPos()), Point(MinObjekter.at(i).getXPos(), FRAME_HOYDE), Scalar(0, 0, 255), 2);
+		if (MinObjekter.at(i).getXPos() - 25 > 0)
+			line(frame, Point(MinObjekter.at(i).getXPos(), MinObjekter.at(i).getYPos()), Point(MinObjekter.at(i).getXPos() - 25, MinObjekter.at(i).getYPos()), Scalar(0, 0, 255), 2);
+		else line(frame, Point(MinObjekter.at(i).getXPos(), MinObjekter.at(i).getYPos()), Point(0, MinObjekter.at(i).getYPos()), Scalar(0, 0, 255), 2);
+		if (MinObjekter.at(i).getXPos() + 25 < FRAME_BREDDE)
+			line(frame, Point(MinObjekter.at(i).getXPos(), MinObjekter.at(i).getYPos()), Point(MinObjekter.at(i).getXPos() + 25, MinObjekter.at(i).getYPos()), Scalar(0, 0, 255), 2);
+		else line(frame, Point(MinObjekter.at(i).getXPos(), MinObjekter.at(i).getYPos()), Point(FRAME_BREDDE, MinObjekter.at(i).getYPos()), Scalar(0, 0, 255), 2);
+
+		putText(frame, intToString(MinObjekter.at(i).getXPos()) + "," + intToString(MinObjekter.at(i).getYPos()), Point(MinObjekter.at(i).getXPos(), MinObjekter.at(i).getYPos() + 30), 1, 1, Scalar(0, 0, 255), 2);
+	
+		//Teksten som vi skal ha, 30 piksel over objekten (+30 = nedover , -30 = oppover)  
+		cv::putText(frame,MinObjekter.at(i).getType(),cv::Point(MinObjekter.at(i).getXPos(), MinObjekter.at(i).getYPos() - 30),1,2,MinObjekter.at(i).getFarge());
+
+	}
+}
+void morphOps(Mat &thresh) //oppretter elementer som vil justere utvid og erudere  bildet
+{	
+	Mat erodeElement = getStructuringElement(MORPH_RECT, Size(3, 3));// 3x3 piksel rektangel
+	
+	Mat dilateElement = getStructuringElement(MORPH_RECT, Size(8, 8));//utvidder til 8x8 piksel slik at objektet er synlig
+
+	erode(thresh, thresh, erodeElement);
+	erode(thresh, thresh, erodeElement);
+
+	dilate(thresh, thresh, dilateElement);
+	dilate(thresh, thresh, dilateElement);
+}
+
+void trackFilteredObject(Mat threshold, Mat HSV, Mat &cameraFeed)
+{
+	//int &x, int &y
+	//sletter int x og y :D
+	//Objekter sukkerbit;   //siden vi lager en vektor av sukkerbiter komenterer jeg bortsukkerbiten
+
+	vector <Objekter> sukkerbiter;  // trenger å erstatte "sukkerbit" med "sukkerbiter"  
+
+	Mat temp;
+	threshold.copyTo(temp);
+	vector< vector<Point> > contours;//vektorer til utgang av findConturs
+	vector<Vec4i> hierarchy;
+	findContours(temp, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE);//finne kantene av den filtererte bildet ved å bruke findContours funksjonen fra opencv
+
+	double refArea = 0;//moments metoden for å finne filtererte objekt
+	int largestIndex = 0;
+	bool objectFound = false;
+	if (hierarchy.size() > 0) {
+		int numObjects = hierarchy.size();
+		if (numObjects<Maks_Nr_Objekter) //hvis numObjects<Maks_Nr_Objekter vi har filteren lager støy
+		{
+			for (int index = 0; index >= 0; index = hierarchy[index][0])
+			{
+				Moments moment = moments((cv::Mat)contours[index]);
+				double area = moment.m00;
+
+				//hvis areal er mindre enn 20 px i 20x so er det forstyrrelse. og hvis det areal=(3/2) av bilde størrelsen skyldes dårlig filter
+				//siden vi vil objekten med størst areal lagrer vi reference areal av hver gjentakelse og sammenligne det med neste gjentagelse
+				if (area>MIN_OBJEKT_AREA && area<MAKS_OBJECT_AREA && area>refArea)
+				{
+					//x = moment.m10 / area;
+					//y = moment.m01 / area;
+
+					//sukkerbit.xPos = moment.m10 / area; //forksjell mellom publik og privete variabler. da trenger vi ikke å lage nye variabler vi bruker samme navn for forskjellige klasser. så lenge vi beholder dem private 
+					//sukkerbit.yPos = moment.m10 / area;
+					Objekter sukkerbit;  // midlertidig for å ikke få feil på XPos og YPos
+
+					sukkerbit.setXPos(moment.m10 / area);
+					sukkerbit.setYPos(moment.m01 / area);
+
+					sukkerbiter.push_back(sukkerbit);
+
+
+					objectFound = true;
+					refArea = area;
+					largestIndex = index;  //lagrer contour for å bruke det i drawContours
+				}
+				else objectFound = false;
+			}
+
+			if (objectFound == true)//skriver ut om objektet er sporet
+			{
+				putText(cameraFeed, "sporet objekt", Point(0, 50), 2, 1, Scalar(0, 255, 0), 2);  //lar os vite om objektet er sporet med en grønn tekst på overst venstre hjørnet
+				tegnetObjekt(sukkerbiter, cameraFeed);//tegner objektets plassering på skjermen
+													  //drawContours(cameraFeed, contours, largestIndex, Scalar(0, 255, 255), 2); //merkerer objektet som ble detektert med gull former rundt det 
+			}
+
+		}
+		else putText(cameraFeed, "For mye forstyrrelse juster filteren", Point(0, 50), 1, 2, Scalar(0, 0, 255), 2);
+	}
+}
+void trackFilteredObject(Objekter MinObjekter,Mat threshold, Mat HSV, Mat &cameraFeed)
+{
+	//int &x, int &y
+	//sletter int x og y :D
+	//Objekter sukkerbit;   //siden vi lager en vektor av sukkerbiter komenterer jeg bortsukkerbiten
+
+	vector <Objekter> sukkerbiter;  // trenger å erstatte "sukkerbit" med "sukkerbiter"  
+
+	Mat temp;
+	threshold.copyTo(temp);
+	vector< vector<Point> > contours;//vektorer til utgang av findConturs
+	vector<Vec4i> hierarchy;
+	findContours(temp, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE);//finne kantene av den filtererte bildet ved å bruke findContours funksjonen fra opencv
+
+	double refArea = 0;//moments metoden for å finne filtererte objekt
+	int largestIndex = 0;
+	bool objectFound = false;
+	if (hierarchy.size() > 0) {
+		int numObjects = hierarchy.size();
+		if (numObjects<Maks_Nr_Objekter) //hvis numObjects<Maks_Nr_Objekter vi har filteren lager støy
+		{
+			for (int index = 0; index >= 0; index = hierarchy[index][0])
+			{
+				Moments moment = moments((cv::Mat)contours[index]);
+				double area = moment.m00;
+
+				//hvis areal er mindre enn 20 px i 20x so er det forstyrrelse. og hvis det areal=(3/2) av bilde størrelsen skyldes dårlig filter
+				//siden vi vil objekten med størst areal lagrer vi reference areal av hver gjentakelse og sammenligne det med neste gjentagelse
+				if (area>MIN_OBJEKT_AREA && area<MAKS_OBJECT_AREA && area>refArea)
+				{
+					//x = moment.m10 / area;
+					//y = moment.m01 / area;
+
+					//sukkerbit.xPos = moment.m10 / area; //forksjell mellom publik og privete variabler. da trenger vi ikke å lage nye variabler vi bruker samme navn for forskjellige klasser. så lenge vi beholder dem private 
+					//sukkerbit.yPos = moment.m10 / area;
+					Objekter sukkerbit;  // midlertidig for å ikke få feil på XPos og YPos
+
+					sukkerbit.setXPos(moment.m10 / area);
+					sukkerbit.setYPos(moment.m01 / area);
+					sukkerbit.setType(MinObjekter.getType());
+					sukkerbit.setFarge(MinObjekter.getFarge());
+
+					sukkerbiter.push_back(sukkerbit);
+
+
+					objectFound = true;
+					refArea = area;
+					largestIndex = index;  //lagrer contour for å bruke det i drawContours
+				}
+				else objectFound = false;
+			}
+
+			if (objectFound == true)//skriver ut om objektet er sporet
+			{
+				putText(cameraFeed, "sporet objekt", Point(0, 50), 2, 1, Scalar(0, 255, 0), 2);  //lar os vite om objektet er sporet med en grønn tekst på overst venstre hjørnet
+				tegnetObjekt(sukkerbiter, cameraFeed);//tegner objektets plassering på skjermen
+													  //drawContours(cameraFeed, contours, largestIndex, Scalar(0, 255, 255), 2); //merkerer objektet som ble detektert med gull former rundt det 
+			}
+
+		}
+		else putText(cameraFeed, "For mye forstyrrelse juster filteren", Point(0, 50), 1, 2, Scalar(0, 0, 255), 2);
+	}
+}
+
+int main(int argc, char* argv[], Objekter MinObjekt)
+{
+	Objekter test;
+	bool trackObjects = true;
+	bool useMorphOps = true;
+	kalibreringsMode = true; //setter den lik false for å kjøre flere objekter funksjonen med tekst på 
+	Mat cameraFeed;//Matrise for å lagre hver frame ut av kamera feed
+	Mat HSV;	//matrise lager for HSV bilde
+	Mat threshold;	//matrise lager for binare threshhold bildet 
+
+					//int x = 0, y = 0; //x og y verdier for objektets plassering 
+	test.setXPos(0); // = 0;
+	test.setYPos(0); // = 0;
+
+	VideoCapture capture; // gir tilgang til kamerafeed
+	capture.open(1); // åpner camera fra port 0 bruk 1 for den ekstra kameraen som vi bruker 
+	capture.set(CV_CAP_PROP_FRAME_WIDTH, FRAME_BREDDE); //setter lengde og bredde i funksjonen
+	capture.set(CV_CAP_PROP_FRAME_HEIGHT, FRAME_HOYDE);
+
+	cv::namedWindow(skjerm_vindu);  //må lage en vindu før vi etter mus callback
+									//we pass the handle to our "frame" matrix so that we can draw a Rektangel to it
+									//as the user clicks and drags the mouse
+	cv::setMouseCallback(skjerm_vindu, Dra_Rektangel, &cameraFeed); //aktiverer mus callback funksjonen med kamerafeed vinduet
+
+	mus_Tegner = false; // resetter disse finksjoneer 
+	musBevegelse = false;
+	tegnet_rektanglet = false;
+
+	while (1) //infinite loop som webcam feed blir kopiert til cameraFeed matrise og alle operasjoner skal utføres her
+	{
+		capture.read(cameraFeed);// leser inn camerafeed 
+		cvtColor(cameraFeed, HSV, COLOR_BGR2HSV);//konverterer BGR til HSV
+
+		HSV_Verdi_opptak(cameraFeed, HSV);//setter HSV verdiene som vi merkerer med mus
+		inRange(HSV, Scalar(H_MIN, S_MIN, V_MIN), Scalar(H_MAKS, S_MAKS, V_MAKS), threshold);// filterere HSV bilder mellom verdier og lagrer dem i threshold matrisen
+
+		if (useMorphOps) //kjører morphological for å fjerne støyet/forstyrrelsen og merkerer den filtrerte objekt
+			morphOps(threshold);
+
+		if (trackObjects) {//returnerer x og y koordinatene til sporet objektet med å sende thresholdet frame til objekt sporing funksjon
+
+						   //std::cout << "Using threshold: " << threshold << std::endl;
+						   //std::cout << "Using HSV: " << HSV << std::endl;
+						   //std::cout << "Using CameraFeed: " << cameraFeed << std::endl;
+			trackFilteredObject(threshold, HSV, cameraFeed);  // trenger 3 matriser for å kjøre den videre.
+		}
+
+		if (kalibreringsMode == true) //viser frame / rammen
+		{
+			opprettHSV_Justering();//create slider bars for HSV filtering
+			imshow(skjerm_vindu1, HSV);
+			imshow(skjerm_vindu2, threshold);
+		}
+		else 
+		{
+			Objekter Sukkerbit("Sukkerbit"), Regulator("Regulator"), Reguleringshjul("RegHjul");  //her lager jeg tre objekter som vi skal spore og 
+			
+//			Sukkerbit.setHSVmin(Scalar(54, 19, 45)); //000 for det er det minimume HSV verdien som vi kan få. Også må vi finne ut hvilket HSVmin verdi sukkerbiten vår har
+//			Sukkerbit.setHSVmaks(Scalar(107, 255, 196)); //255 er den maksimale HSV verdien som vi kan få. Også må vi finne ut hvilket HSVmaks verdi sukkerbiten har
+			//har flyttet dem til cpp filen (Objekter.cpp)
+
+															 
+																					//skal søke etter de tre objekter sekvensvis 
+			cvtColor(cameraFeed, HSV, COLOR_BGR2HSV);//konverterer BGR til HSV
+			inRange(HSV, Sukkerbit.getHSVmin(), Sukkerbit.getHSVmaks(), threshold);
+			morphOps(threshold);
+			trackFilteredObject(Sukkerbit,threshold, HSV, cameraFeed);  // trenger 3 matriser for å kjøre den videre. //putter Sukkerbit og dette funksjonen blir overloaded, dermed tar jeg en kopi av funksjonen og legger til at den skal ta imot (Objekter MinObjekter) også
+
+
+			cvtColor(cameraFeed, HSV, COLOR_BGR2HSV);//konverterer BGR til HSV
+			inRange(HSV, Regulator.getHSVmin(), Regulator.getHSVmaks(), threshold);
+			morphOps(threshold);
+			trackFilteredObject(Regulator,threshold, HSV, cameraFeed);  // trenger 3 matriser for å kjøre den videre.
+
+			cvtColor(cameraFeed, HSV, COLOR_BGR2HSV);//konverterer BGR til HSV
+			inRange(HSV, Reguleringshjul.getHSVmin(), Reguleringshjul.getHSVmaks(), threshold);
+			morphOps(threshold);
+			trackFilteredObject(Reguleringshjul,threshold, HSV, cameraFeed);  // trenger 3 matriser for å kjøre den videre.
+
+			destroyWindow(skjerm_vindu1);
+			destroyWindow(skjerm_vindu2);
+			destroyWindow(HSV_justering_vindu);
+
+		}
+
+		imshow(skjerm_vindu, cameraFeed);
+		if (waitKey(30) == 99) kalibreringsMode = !kalibreringsMode;//veksler kalibreringsmode med å trykke på 'c'.
+	}
+	return 0;
+}
